@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>collectstatic: Dependency Resolution Animation</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #f0f2f5; color: #2a2a2a;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px;
+}
+h1 { font-size: 1.4rem; color: #2a2a2a; margin-bottom: 6px; text-align: center; }
+.subtitle { font-size: 0.82rem; color: #666; margin-bottom: 18px; text-align: center; }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+.tab-btn {
+  padding: 8px 22px; border-radius: 20px; border: 2px solid #b0b8c4;
+  background: #fff; color: #4a6a8a; cursor: pointer; font-size: 0.88rem; transition: all 0.2s;
+}
+.tab-btn.active { background: #4a6a8a; color: #fff; border-color: #4a6a8a; }
+
+.panel { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 960px; }
+.panel.active { display: flex; }
+
+/* ── Stage ─────────────────────────────────────────── */
+.stage {
+  width: 100%; background: #fff; border-radius: 8px; border: 1px solid #dde1e8;
+  position: relative; padding: 10px 16px 20px;
+}
+.stage-label {
+  font-size: 0.72rem; color: #999; text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+/* Arrow region above the icons */
+.arrow-zone {
+  width: 100%; height: 80px; position: relative; flex-shrink: 0;
+}
+.arrow-zone svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; }
+
+/* Row of file columns */
+.cols-row {
+  display: flex; justify-content: space-around; align-items: flex-start;
+  width: 100%; gap: 6px;
+}
+.file-col {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  width: 110px; flex-shrink: 0;
+}
+
+/* ── Original file icon ──────────────────────────────── */
+.orig-icon {
+  display: flex; flex-direction: column; align-items: center; width: 90px;
+  transition: filter 0.3s;
+}
+.orig-icon.highlighted { filter: drop-shadow(0 0 5px #9a7a30); }
+.orig-icon.faded { opacity: 0.3; filter: grayscale(0.6); }
+
+.file-body {
+  width: 54px; height: 64px; background: #eaf0f7; border-radius: 4px 14px 4px 4px;
+  border: 2px solid #7a9aba; position: relative; display: flex; align-items: center;
+  justify-content: center; font-size: 0.65rem; color: #4a6a8a; font-weight: 700;
+}
+.file-body::before {
+  content: ''; position: absolute; top: 0; right: 0; width: 16px; height: 16px;
+  background: #d8e6f0; border-left: 2px solid #7a9aba; border-bottom: 2px solid #7a9aba;
+  border-radius: 0 12px 0 0;
+}
+.file-col.type-png .file-body { background: #f0eaf7; border-color: #9a7aba; color: #7a5a9a; }
+.file-col.type-png .file-body::before { background: #e4d8f0; border-color: #9a7aba; }
+
+.file-label { font-size: 0.62rem; color: #7a9ab0; margin-top: 5px; text-align: center; word-break: break-all; }
+.file-col.type-png .file-label { color: #9a7aba; }
+
+/* ── Copies area ─────────────────────────────────────── */
+.copies-area {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  min-height: 20px; width: 100%;
+}
+
+/* ── Hashed copy icon ────────────────────────────────── */
+.hashed-copy {
+  display: flex; flex-direction: column; align-items: center;
+  width: 90px; transform-origin: top center;
+  animation: copyIn 0.35s cubic-bezier(.4,1.6,.6,1) forwards;
+}
+@keyframes copyIn {
+  from { opacity: 0; transform: scaleY(0.2) translateY(-10px); }
+  to   { opacity: 1; transform: scaleY(1) translateY(0); }
+}
+.hashed-copy.copy-deleting {
+  animation: copyOut 0.45s ease-in forwards;
+}
+@keyframes copyOut {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0.7; transform: scale(1.08); }
+  100% { opacity: 0; transform: scale(0.1); }
+}
+.copy-body {
+  width: 54px; height: 64px; border-radius: 4px 14px 4px 4px;
+  border: 2px solid; position: relative; display: flex; align-items: center;
+  justify-content: center; font-size: 0.6rem; font-weight: 700;
+}
+.copy-body::before {
+  content: ''; position: absolute; top: 0; right: 0; width: 16px; height: 16px;
+  border-left: 2px solid inherit; border-bottom: 2px solid inherit; border-radius: 0 12px 0 0;
+}
+.hashed-copy.copy-ok .copy-body { background: #eaf5ee; border-color: #5a9a6a; color: #2a6a3a; }
+.hashed-copy.copy-ok .copy-body::before { background: #d6eedd; border-color: #5a9a6a; }
+.hashed-copy.copy-wrong .copy-body { background: #f5eaea; border-color: #b05050; color: #802020; }
+.hashed-copy.copy-wrong .copy-body::before { background: #eed6d6; border-color: #b05050; }
+
+.copy-label {
+  font-size: 0.57rem; margin-top: 4px; text-align: center; word-break: break-all;
+  line-height: 1.3; max-width: 90px;
+}
+.copy-ok .copy-label { color: #3a7a4a; }
+.copy-wrong .copy-label { color: #904040; }
+
+/* Arrow paths */
+.dep-arrow {
+  fill: none; stroke-width: 1.8;
+  opacity: 0; transition: opacity 0.4s;
+}
+.dep-arrow.show { opacity: 0.6; }
+.dep-arrow.hl-yellow { stroke: #b07820 !important; opacity: 1 !important; stroke-width: 2.2; marker-end: url(#ah-yellow) !important; }
+.dep-arrow.hl-green  { stroke: #3a8a50 !important; opacity: 1 !important; stroke-width: 2.2; marker-end: url(#ah-green) !important;  }
+.dep-arrow.hl-cycle  { stroke: #b05000 !important; opacity: 1 !important; stroke-width: 2.2; marker-end: url(#ah-cycle) !important; stroke-dasharray: 5 3; }
+
+/* Example selector */
+.ex-selector { display: flex; gap: 8px; align-items: center; justify-content: center; margin-bottom: 14px; flex-wrap: wrap; }
+.ex-label { font-size: 0.8rem; color: #888; }
+.ex-btn {
+  padding: 6px 18px; border-radius: 16px; border: 2px solid #c0b0d0;
+  background: #fff; color: #7a5a9a; cursor: pointer; font-size: 0.84rem; transition: all 0.2s;
+}
+.ex-btn.active { background: #7a5a9a; color: #fff; border-color: #7a5a9a; }
+.ex-btn:hover:not(.active) { background: #f5f0fa; }
+
+/* Combined-hash copy (circular dep result) */
+.hashed-copy.copy-combined .copy-body { background: #eaf3f8; border-color: #5a8aaa; color: #2a5a7a; }
+.hashed-copy.copy-combined .copy-body::before { background: #d4e8f4; border-color: #5a8aaa; }
+.copy-combined .copy-label { color: #3a6a8a; }
+
+/* Pass label strip */
+.pass-strip {
+  width: 100%; text-align: center; font-size: 0.78rem; color: #6a5000;
+  background: #fdf5dc; border: 1px solid #e0d090; border-radius: 4px; padding: 3px 0; margin: 8px 0;
+  opacity: 0; transition: opacity 0.4s;
+}
+.pass-strip.show { opacity: 1; }
+
+/* Log */
+.log-area {
+  width: 100%; margin-top: 12px; background: #fafafa; border-radius: 6px;
+  border: 1px solid #dde1e8; padding: 8px 12px; font-family: 'Courier New', monospace;
+  font-size: 0.7rem; min-height: 80px; max-height: 110px; overflow-y: auto;
+}
+.log-line { margin: 2px 0; opacity: 0; animation: fadeIn 0.3s forwards; }
+@keyframes fadeIn { to { opacity: 1; } }
+.log-ok { color: #2a7a3a; } .log-warn { color: #8a6000; } .log-err { color: #9a2020; }
+.log-info { color: #2a5a8a; } .log-dim { color: #aaa; }
+
+/* Desc */
+.desc-box {
+  width: 100%; margin-top: 8px; background: #f5f7fa; border-left: 3px solid #7a9aba;
+  border-radius: 0 6px 6px 0; padding: 7px 11px; font-size: 0.78rem; color: #4a6a8a; min-height: 36px;
+}
+.desc-box.warn { border-color: #c08020; color: #7a5000; background: #fdf8ee; }
+.desc-box.ok   { border-color: #4a8a5a; color: #2a5a34; background: #f0f8f2; }
+
+/* Controls */
+.controls { display: flex; gap: 10px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+.btn { padding: 7px 18px; border-radius: 7px; border: none; cursor: pointer; font-size: 0.83rem; font-weight: 600; transition: all 0.2s; }
+.btn-play { background: #4a7a5a; color: #fff; }
+.btn-play:hover { background: #5a8a6a; }
+.btn-play:disabled { background: #c0d0c4; color: #8a9a8a; cursor: not-allowed; }
+.btn-reset { background: #e8edf2; color: #4a6a8a; border: 1px solid #c8d4e0; }
+.btn-reset:hover { background: #d8e3ec; }
+.spd { font-size: 0.78rem; color: #888; }
+.spd-sel {
+  background: #fff; color: #4a6a8a; border: 1px solid #c0c8d4;
+  border-radius: 5px; padding: 4px 7px; font-size: 0.78rem;
+}
+.step-ctr { font-size: 0.72rem; color: #aaa; margin-left: 4px; }
+
+/* Progress */
+.prog-wrap { width: 100%; height: 3px; background: #dde1e8; border-radius: 2px; margin-bottom: 12px; overflow: hidden; }
+.prog-fill { height: 100%; background: linear-gradient(90deg,#6a9aba,#4a8a5a); border-radius: 2px; width: 0%; transition: width 0.35s; }
+</style>
+</head>
+<body>
+
+<h1>collectstatic: Dependency Resolution</h1>
+<p class="subtitle" id="subtitle-desc"></p>
+
+<div class="ex-selector">
+  <span class="ex-label">Example:</span>
+  <button class="ex-btn active" onclick="setExample(0)">Dependency chain</button>
+  <button class="ex-btn"        onclick="setExample(1)">Circular dependency</button>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('old')">Old Algorithm &mdash; multi-pass</button>
+  <button class="tab-btn"        onclick="switchTab('new')">New Algorithm &mdash; TopologicalSorter</button>
+</div>
+
+<!-- OLD PANEL -->
+<div class="panel active" id="panel-old">
+  <div class="prog-wrap"><div class="prog-fill" id="old-prog"></div></div>
+  <div class="stage" id="old-stage">
+    <div class="stage-label">Filesystem discovery order (alphabetical) &mdash; arrows show import topology</div>
+    <div class="arrow-zone" id="old-arrow-zone">
+      <svg id="old-svg">
+        <defs>
+          <marker id="ah-old-base"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#7a9aba"/></marker>
+          <marker id="ah-old-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#b07820"/></marker>
+          <marker id="ah-old-green"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3a8a50"/></marker>
+          <marker id="ah-old-cycle"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#b05000"/></marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="cols-row" id="old-cols"></div>
+    <div class="pass-strip" id="old-pass-strip"></div>
+  </div>
+  <div class="desc-box" id="old-desc">Press Play to begin.</div>
+  <div class="log-area"  id="old-log"></div>
+  <div class="controls">
+    <button class="btn btn-play"  id="old-play-btn" onclick="oldA.play()">&#9654; Play</button>
+    <button class="btn btn-reset" onclick="oldA.reset()">&#8635; Reset</button>
+    <span class="spd">Speed:</span>
+    <select class="spd-sel" onchange="oldA.setSpeed(this.value)">
+      <option value="1">1&times;</option><option value="1.5">1.5&times;</option>
+      <option value="2">2&times;</option><option value="3">3&times;</option>
+    </select>
+    <span class="step-ctr" id="old-step-ctr"></span>
+  </div>
+</div>
+
+<!-- NEW PANEL -->
+<div class="panel" id="panel-new">
+  <div class="prog-wrap"><div class="prog-fill" id="new-prog"></div></div>
+  <div class="stage" id="new-stage">
+    <div class="stage-label">Filesystem discovery order (alphabetical) &mdash; arrows show import topology</div>
+    <div class="arrow-zone" id="new-arrow-zone">
+      <svg id="new-svg">
+        <defs>
+          <marker id="ah-new-base"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#7a9aba"/></marker>
+          <marker id="ah-new-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#b07820"/></marker>
+          <marker id="ah-new-green"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3a8a50"/></marker>
+          <marker id="ah-new-cycle"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#b05000"/></marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="cols-row" id="new-cols"></div>
+    <div class="pass-strip" id="new-pass-strip"></div>
+  </div>
+  <div class="desc-box" id="new-desc">Press Play to begin.</div>
+  <div class="log-area"  id="new-log"></div>
+  <div class="controls">
+    <button class="btn btn-play"  id="new-play-btn" onclick="newA.play()">&#9654; Play</button>
+    <button class="btn btn-reset" onclick="newA.reset()">&#8635; Reset</button>
+    <span class="spd">Speed:</span>
+    <select class="spd-sel" onchange="newA.setSpeed(this.value)">
+      <option value="1">1&times;</option><option value="1.5">1.5&times;</option>
+      <option value="2">2&times;</option><option value="3">3&times;</option>
+    </select>
+    <span class="step-ctr" id="new-step-ctr"></span>
+  </div>
+</div>
+
+<script>
+// ── Examples ──────────────────────────────────────────────────────────────────
+const EXAMPLES = [
+  {
+    id: 'chain',
+    label: 'Dependency chain',
+    subtitle: 'Files: <strong>component.css</strong> &rarr; <strong>styles.css</strong> &rarr; <strong>base.css</strong> &rarr; <strong>reset.css</strong>; &nbsp;<strong>styles.css</strong> also references <strong>zebra_background.png</strong>',
+    FILES: {
+      base:      { name:'base.css',             ext:'CSS', type:'css', deps:['reset'] },
+      component: { name:'component.css',        ext:'CSS', type:'css', deps:['styles'] },
+      reset:     { name:'reset.css',            ext:'CSS', type:'css', deps:[] },
+      styles:    { name:'styles.css',           ext:'CSS', type:'css', deps:['base','zebra'] },
+      zebra:     { name:'zebra_background.png', ext:'PNG', type:'png', deps:[] },
+    },
+    HASHES: {
+      base:      { ok:'9d8e7f', bad:'ffaa11' },
+      component: { ok:'7e6f5d', bad:'cafeba' },
+      reset:     { ok:'a1b2c3', bad:null },
+      styles:    { ok:'3c2b1a', bad:'deadbe' },
+      zebra:     { ok:'img4f5', bad:null },
+    },
+    FS_ORDER:       ['base','component','reset','styles','zebra'],
+    TOPO_ORDER:     ['reset','zebra','base','styles','component'],
+    CSS_FS_ORDER:   ['base','component','reset','styles'],
+    CSS_TOPO_ORDER: ['reset','base','styles','component'],
+    ARROWS: [
+      { from:'component', to:'styles', height:38 },
+      { from:'styles',    to:'base',   height:68 },
+      { from:'styles',    to:'zebra',  height:22 },
+      { from:'base',      to:'reset',  height:52 },
+    ],
+  },
+  {
+    id: 'circular',
+    label: 'Circular dependency',
+    subtitle: 'Files: <strong>a.css</strong> &harr; <strong>b.css</strong> (circular); &nbsp;<strong>b.css</strong> also references <strong>zebra_background.png</strong>',
+    FILES: {
+      a:     { name:'a.css',                ext:'CSS', type:'css', deps:['b'] },
+      b:     { name:'b.css',                ext:'CSS', type:'css', deps:['a','zebra'] },
+      zebra: { name:'zebra_background.png', ext:'PNG', type:'png', deps:[] },
+    },
+    HASHES: {
+      a:     { ok:'c1rc42', bad:'aab123' },
+      b:     { ok:'c1rc42', bad:'bb9876' },
+      zebra: { ok:'img4f5', bad:null },
+    },
+    FS_ORDER:       ['a','b','zebra'],
+    TOPO_ORDER:     ['a','b','zebra'],
+    CSS_FS_ORDER:   ['a','b'],
+    CSS_TOPO_ORDER: [],   // all CSS files are circular — no valid topo order
+    ARROWS: [
+      { from:'a', to:'b',     height:48 },  // forward (high arc)
+      { from:'b', to:'a',     height:18 },  // back-edge showing the cycle (low arc)
+      { from:'b', to:'zebra', height:30 },
+    ],
+  },
+];
+
+// ── Active example (mutable globals updated by setExample) ─────────────────────
+let activeExIdx = 0;
+let FILES, HASHES, FS_ORDER, CSS_FS_ORDER, CSS_TOPO_ORDER, TOPO_ORDER, ARROWS;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const el = id => document.getElementById(id);
+const wait = (ms, spd) => new Promise(r => setTimeout(r, ms / spd));
+
+function switchTab(t) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) =>
+    b.classList.toggle('active', (i===0&&t==='old')||(i===1&&t==='new')));
+  el('panel-old').classList.toggle('active', t==='old');
+  el('panel-new').classList.toggle('active', t==='new');
+}
+
+function setExample(n) {
+  activeExIdx = n;
+  const ex = EXAMPLES[n];
+  FILES          = ex.FILES;
+  HASHES         = ex.HASHES;
+  FS_ORDER       = ex.FS_ORDER;
+  CSS_FS_ORDER   = ex.CSS_FS_ORDER;
+  CSS_TOPO_ORDER = ex.CSS_TOPO_ORDER;
+  TOPO_ORDER     = ex.TOPO_ORDER;
+  ARROWS         = ex.ARROWS;
+  el('subtitle-desc').innerHTML = ex.subtitle;
+  document.querySelectorAll('.ex-btn').forEach((b,i) => b.classList.toggle('active', i===n));
+  // Reset both animations so they rebuild with the new file set
+  if (typeof oldA !== 'undefined') { oldA.reset(); newA.reset(); }
+}
+
+function addLog(pfx, msg, cls='log-info') {
+  const a = el(pfx+'-log'), d = document.createElement('div');
+  d.className = 'log-line ' + cls; d.textContent = msg;
+  a.appendChild(d); a.scrollTop = a.scrollHeight;
+}
+function setDesc(pfx, msg, type='') {
+  const d = el(pfx+'-desc'); d.textContent = msg;
+  d.className = 'desc-box' + (type ? ' '+type : '');
+}
+function setProgress(pfx, pct) { el(pfx+'-prog').style.width = pct+'%'; }
+function setPass(pfx, msg) {
+  const s = el(pfx+'-pass-strip'); s.textContent = msg;
+  s.classList.toggle('show', !!msg);
+}
+
+// ── Column / icon builders ─────────────────────────────────────────────────────
+function buildCols(pfx) {
+  const container = el(pfx+'-cols');
+  container.innerHTML = '';
+  FS_ORDER.forEach(id => {
+    const f = FILES[id];
+    const col = document.createElement('div');
+    col.className = 'file-col type-'+f.type;
+    col.id = pfx+'-col-'+id;
+    col.innerHTML = `
+      <div class="orig-icon" id="${pfx}-orig-${id}">
+        <div class="file-body"><span>${f.ext}</span></div>
+        <div class="file-label">${f.name}</div>
+      </div>
+      <div class="copies-area" id="${pfx}-copies-${id}"></div>`;
+    container.appendChild(col);
+  });
+}
+
+function setOrigState(pfx, id, state) {
+  const ic = el(pfx+'-orig-'+id); if(!ic) return;
+  ic.className = 'orig-icon' + (state ? ' '+state : '');
+}
+
+// Create a hashed copy icon below the original; returns the element
+function createCopy(pfx, id, hash, isOk) {
+  const slot = el(pfx+'-copies-'+id);
+  const f    = FILES[id];
+  const ext  = f.type === 'png' ? 'png' : 'css';
+  const base = f.name.replace(/\.(css|png)$/,'');
+  const div  = document.createElement('div');
+  div.className = 'hashed-copy ' + (isOk ? 'copy-ok' : 'copy-wrong');
+  div.innerHTML = `
+    <div class="copy-body"><span>${f.ext}</span></div>
+    <div class="copy-label">${base}.<wbr>${hash}.<wbr>${ext}</div>`;
+  slot.appendChild(div);
+  return div;
+}
+
+async function deleteCopy(copyEl, spd) {
+  copyEl.classList.add('copy-deleting');
+  await wait(460, spd);
+  copyEl.remove();
+}
+
+function clearCopies(pfx) {
+  FS_ORDER.forEach(id => { el(pfx+'-copies-'+id).innerHTML = ''; });
+}
+
+// ── Arrow drawing ─────────────────────────────────────────────────────────────
+function colCenterX(pfx, id) {
+  const orig  = el(pfx+'-orig-'+id);
+  const zone  = el(pfx+'-arrow-zone');
+  if (!orig || !zone) return 0;
+  const or = orig.getBoundingClientRect();
+  const zr = zone.getBoundingClientRect();
+  return or.left - zr.left + or.width/2;
+}
+
+function drawAllArrows(pfx, highlights) {
+  // highlights: Set of 'from-to' strings that should be highlighted
+  const svg     = el(pfx+'-svg');
+  const zoneH   = el(pfx+'-arrow-zone').clientHeight;
+  const baseY   = zoneH - 4; // bottom of zone, just above icons
+
+  svg.querySelectorAll('.dep-arrow').forEach(a => a.remove());
+
+  ARROWS.forEach(({ from, to, height }) => {
+    const x1 = colCenterX(pfx, from);
+    const x2 = colCenterX(pfx, to);
+    const y1 = baseY;
+    const y2 = baseY;
+    const cx = (x1+x2)/2;
+    const cy = baseY - height;
+
+    const key = from+'-'+to;
+    const isHL = highlights && highlights.has(key);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`);
+    const hlCls = isHL ? (highlights.get ? highlights.get(key) : 'hl-yellow') : '';
+    path.className.baseVal = 'dep-arrow show' + (hlCls ? ' '+hlCls : '');
+    path.style.stroke = isHL ? '' : '#7a9aba';
+
+    const markerId = isHL
+      ? (hlCls==='hl-green' ? `ah-${pfx}-green` : `ah-${pfx}-yellow`)
+      : `ah-${pfx}-base`;
+    path.setAttribute('marker-end', `url(#${markerId})`);
+    svg.appendChild(path);
+  });
+}
+
+function drawHighlightArrows(pfx, fromId) {
+  // Highlight all arrows originating from fromId
+  const hl = new Map();
+  ARROWS.forEach(a => {
+    if (a.from === fromId) hl.set(a.from+'-'+a.to, 'hl-yellow');
+  });
+  drawAllArrows(pfx, hl);
+}
+
+function drawGreenArrows(pfx, fromId) {
+  const hl = new Map();
+  ARROWS.forEach(a => {
+    if (a.from === fromId) hl.set(a.from+'-'+a.to, 'hl-green');
+  });
+  drawAllArrows(pfx, hl);
+}
+
+function drawCycleArrows(pfx) {
+  // Highlight all arrows that form back-edges (cycles) in orange
+  const hl = new Map();
+  ARROWS.forEach(a => {
+    // A back-edge exists when there's also an arrow in the reverse direction
+    const isBackEdge = ARROWS.some(r => r.from === a.to && r.to === a.from);
+    if (isBackEdge) hl.set(a.from+'-'+a.to, 'hl-cycle');
+  });
+  drawAllArrows(pfx, hl);
+}
+
+// ── Sort phase animation ───────────────────────────────────────────────────────
+// Physically moves each file column to its topological-order slot.
+// Files moving right arc upward; files moving left arc downward.
+// When two file paths cross, one takes the high road and one takes the low road.
+// Arrows are redrawn every rAF frame during the transition.
+async function animateSortPhase(pfx, speed, stopRef) {
+  const colsRow = el(pfx + '-cols');
+
+  // 1. Snapshot positions of ALL columns (needed so zebra's position is known
+  //    and absolute-layout can pin it in place).
+  const rowRect = colsRow.getBoundingClientRect();
+  const snap = {};
+  FS_ORDER.forEach(id => {
+    const col  = el(pfx + '-col-' + id);
+    const rect = col.getBoundingClientRect();
+    snap[id] = { el: col, left: rect.left - rowRect.left, width: rect.width };
+  });
+
+  // 2. Target slots for CSS files only (PNG stays where it is).
+  //    CSS_TOPO_ORDER slot i → CSS_FS_ORDER[i]'s current left position.
+  const targetLeft = {};
+  CSS_TOPO_ORDER.forEach((id, i) => { targetLeft[id] = snap[CSS_FS_ORDER[i]].left; });
+
+  // 3. Arc direction: right-movers arc up, left-movers arc down.
+  //    Magnitude scales with number of CSS slots crossed.
+  const arcY = {};
+  CSS_FS_ORDER.forEach(id => {
+    const dx = targetLeft[id] - snap[id].left;
+    if (Math.abs(dx) < 2) { arcY[id] = 0; return; }
+    const slots = Math.abs(CSS_TOPO_ORDER.indexOf(id) - CSS_FS_ORDER.indexOf(id));
+    arcY[id] = (dx > 0 ? -1 : 1) * (50 + slots * 18);
+  });
+
+  // 4. Freeze layout: all columns go absolute so CSS files can move freely
+  //    without the flex algorithm shifting zebra.
+  const rowH = colsRow.getBoundingClientRect().height;
+  colsRow.style.position = 'relative';
+  colsRow.style.height   = rowH + 'px';
+  FS_ORDER.forEach(id => {
+    const s = snap[id];
+    s.el.style.position = 'absolute';
+    s.el.style.left     = s.left + 'px';
+    s.el.style.top      = '0';
+    s.el.style.width    = s.width + 'px';
+    s.el.style.margin   = '0';
+  });
+
+  // 5. Inject @keyframes and trigger animations on CSS files only.
+  //    Zebra gets no animation (dx=0, stays pinned by its absolute left).
+  const wallDur = 950 / speed;
+  const styleTag = document.createElement('style');
+  let css = '';
+  CSS_FS_ORDER.forEach(id => {
+    const dx = targetLeft[id] - snap[id].left;
+    const dy = arcY[id] || 0;
+    const name = `_srt_${pfx}_${id}`;
+    if (dy !== 0) {
+      css += `@keyframes ${name}{0%{transform:translate(0,0)}50%{transform:translate(${dx/2}px,${dy}px)}100%{transform:translate(${dx}px,0)}}\n`;
+    } else {
+      css += `@keyframes ${name}{0%{transform:translateX(0)}100%{transform:translateX(${dx}px)}}\n`;
+    }
+    snap[id].el.style.animation = `${name} ${wallDur}ms cubic-bezier(.4,0,.2,1) forwards`;
+  });
+  styleTag.textContent = css;
+  document.head.appendChild(styleTag);
+
+  // 6. Redraw arrows every frame while the animation runs.
+  let animDone = false;
+  const rafLoop = () => {
+    drawAllArrows(pfx, null);
+    if (!animDone && !stopRef.stopped) requestAnimationFrame(rafLoop);
+  };
+  requestAnimationFrame(rafLoop);
+
+  // 7. Wait for animation to complete.
+  await new Promise(r => setTimeout(r, wallDur + 80));
+  animDone = true;
+
+  // 8. Commit: CSS files in topo order, then zebra last (unchanged position).
+  CSS_TOPO_ORDER.forEach(id => colsRow.appendChild(el(pfx + '-col-' + id)));
+  colsRow.appendChild(snap['zebra'].el);
+
+  // Remove all animation/absolute styles.
+  FS_ORDER.forEach(id => {
+    const colEl = snap[id].el;
+    colEl.style.position  = '';
+    colEl.style.left      = '';
+    colEl.style.top       = '';
+    colEl.style.width     = '';
+    colEl.style.margin    = '';
+    colEl.style.animation = '';
+  });
+  colsRow.style.position = '';
+  colsRow.style.height   = '';
+  styleTag.remove();
+
+  drawAllArrows(pfx, null);
+}
+
+// ── Animation base class ───────────────────────────────────────────────────────
+class Anim {
+  constructor(pfx) {
+    this.pfx = pfx; this.speed = 1; this.running = false; this._stop = false;
+    // Shared object so animateSortPhase can read the stop flag without a closure
+    this._stopRef = { stopped: false };
+  }
+  setSpeed(v) { this.speed = parseFloat(v); }
+
+  reset() {
+    this._stop = true; this._stopRef.stopped = true; this.running = false;
+    // Clean up any injected sort-animation keyframe style tags
+    document.querySelectorAll('style').forEach(s => {
+      if (s.textContent.includes(`_srt_${this.pfx}_`)) s.remove();
+    });
+    buildCols(this.pfx);
+    el(this.pfx+'-log').innerHTML = '';
+    el(this.pfx+'-svg').querySelectorAll('.dep-arrow').forEach(a=>a.remove());
+    setDesc(this.pfx, 'Press Play to begin.');
+    setProgress(this.pfx, 0);
+    setPass(this.pfx, '');
+    el(this.pfx+'-step-ctr').textContent = '';
+    const btn = el(this.pfx+'-play-btn'); btn.disabled = false; btn.textContent = '▶ Play';
+  }
+
+  async play() {
+    if (this.running) return;
+    this._stop = false; this._stopRef.stopped = false; this.running = true;
+    const btn = el(this.pfx+'-play-btn'); btn.disabled = true; btn.textContent = '⏳ Running…';
+    try { await this._run(); } catch(e) { if(e!=='stop') console.error(e); }
+    this.running = false; btn.textContent = '✓ Done';
+  }
+
+  async W(ms) {
+    if (this._stop) throw 'stop';
+    await wait(ms, this.speed);
+    if (this._stop) throw 'stop';
+  }
+
+  step(n, tot) {
+    el(this.pfx+'-step-ctr').textContent = `Step ${n}/${tot}`;
+    setProgress(this.pfx, Math.round(n/tot*100));
+  }
+}
+
+// ══ OLD ALGORITHM ══════════════════════════════════════════════════════════════
+//
+// How it worked:
+//   1. Non-adjustable files (PNG) → processed once, hashed directly.
+//   2. Adjustable files (CSS) → sorted by path depth then iterated.
+//      Up to max_post_process_passes=5 passes:
+//      - Each pass rewrites URL refs to hashed versions.
+//      - Files whose deps weren't yet hashed get a hash based on stale content.
+//      - Old intermediate file (wrong hash) is deleted; new one written.
+//      - If any file's hash changed this pass, loop again.
+//   Result: takes as many passes as the longest dependency chain depth.
+//   Here that's 3 (component→styles→base→reset).
+//
+// Pass 1 adjustable order (alpha): base, component, styles
+//   zebra was handled as non-adjustable before this loop.
+//   reset has no URL refs, so it is adjustable but produces no substitutions;
+//   its hash is stable after pass 1 (same as content hash).
+//   base  → reset not in hashed_files yet → wrong hash ✗
+//   component → styles not in hashed_files yet → wrong hash ✗
+//   reset → no refs → correct hash ✓ (from initial single pass)
+//   styles → base wrong, zebra correct → wrong hash ✗
+//
+// Pass 2 (same alpha order, only unresolved):
+//   base  → reset now in hashed_files → correct ✓
+//   component → styles was wrong → still wrong ✗
+//   styles → base just corrected in this pass → correct ✓
+//
+// Pass 3:
+//   component → styles now correct → correct ✓
+
+class OldAnim extends Anim {
+  constructor() { super('old'); }
+
+  async _run() {
+    if (activeExIdx === 0) await this._runChain();
+    else                   await this._runCircular();
+  }
+
+  async _runChain() {
+    const p = this.pfx;
+    const TOT = 22;
+    let s = 0;
+    const S = n => { s = n; this.step(s, TOT); };
+
+    // ── Step 1: Render columns ─────────────────────────────────────────────────
+    S(1);
+    setDesc(p, 'Files discovered from the filesystem in alphabetical order. Arrows show the import/reference topology.');
+    addLog(p, '— post_process() starting —', 'log-dim');
+    addLog(p, 'Collecting static files…', 'log-info');
+    await this.W(700);
+
+    // Draw arrows after a frame so layout is ready
+    await this.W(100);
+    drawAllArrows(p, null);
+
+    await this.W(600);
+
+    // ── Step 2: Non-adjustable (PNG) first ─────────────────────────────────────
+    S(2);
+    setDesc(p, 'Non-adjustable files (PNG, fonts, etc.) are processed first in a single pass — no URL rewriting needed, just hash the content.');
+    setPass(p, 'Non-adjustable files (single pass)');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Non-adjustable pass ──', 'log-dim');
+    await this.W(700);
+
+    setOrigState(p, 'zebra', 'highlighted');
+    addLog(p, '  Processing zebra_background.png…', 'log-info');
+    await this.W(600);
+    const zebraEl = createCopy(p, 'zebra', HASHES.zebra.ok, true);
+    addLog(p, `    ✓ zebra_background.${HASHES.zebra.ok}.png`, 'log-ok');
+    setOrigState(p, 'zebra', '');
+    await this.W(500);
+
+    // ── Step 3: Pass 1 — CSS files in alphabetical order ──────────────────────
+    S(3);
+    setPass(p, 'Pass 1 of up to 5 — CSS files in alphabetical order');
+    setDesc(p, 'Pass 1: process CSS files alphabetically. Files processed before their dependencies get a hash based on stale/unhashed URL references — these will be wrong.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Pass 1 (adjustable CSS files, alphabetical order) ──', 'log-dim');
+    await this.W(800);
+
+    // base.css — deps: reset (not yet processed → wrong hash)
+    S(4);
+    setOrigState(p, 'base', 'highlighted');
+    drawHighlightArrows(p, 'base');
+    addLog(p, '  Processing base.css…', 'log-info');
+    addLog(p, '    url(reset.css) → reset not in hashed_files yet', 'log-warn');
+    await this.W(700);
+    const baseBad = createCopy(p, 'base', HASHES.base.bad, false);
+    addLog(p, `    ✗ base.${HASHES.base.bad}.css  ← wrong hash (stale dep)`, 'log-err');
+    setOrigState(p, 'base', '');
+    drawAllArrows(p, null);
+    await this.W(500);
+
+    // component.css — deps: styles (not yet processed → wrong hash)
+    S(5);
+    setOrigState(p, 'component', 'highlighted');
+    drawHighlightArrows(p, 'component');
+    addLog(p, '  Processing component.css…', 'log-info');
+    addLog(p, '    url(styles.css) → styles not in hashed_files yet', 'log-warn');
+    await this.W(700);
+    const compBad = createCopy(p, 'component', HASHES.component.bad, false);
+    addLog(p, `    ✗ component.${HASHES.component.bad}.css  ← wrong hash`, 'log-err');
+    setOrigState(p, 'component', '');
+    drawAllArrows(p, null);
+    await this.W(500);
+
+    // reset.css — no deps → correct immediately
+    S(6);
+    setOrigState(p, 'reset', 'highlighted');
+    addLog(p, '  Processing reset.css…', 'log-info');
+    addLog(p, '    No URL references → hash is stable', 'log-dim');
+    await this.W(600);
+    createCopy(p, 'reset', HASHES.reset.ok, true);
+    addLog(p, `    ✓ reset.${HASHES.reset.ok}.css`, 'log-ok');
+    setOrigState(p, 'reset', '');
+    await this.W(500);
+
+    // styles.css — deps: base (wrong), zebra (correct) → wrong hash
+    S(7);
+    setOrigState(p, 'styles', 'highlighted');
+    drawHighlightArrows(p, 'styles');
+    addLog(p, '  Processing styles.css…', 'log-info');
+    addLog(p, `    url(base.css) → hashed_files has .${HASHES.base.bad} (wrong!)`, 'log-warn');
+    addLog(p, `    url(zebra_background.png) → .${HASHES.zebra.ok} ✓`, 'log-dim');
+    await this.W(800);
+    const stylesBad = createCopy(p, 'styles', HASHES.styles.bad, false);
+    addLog(p, `    ✗ styles.${HASHES.styles.bad}.css  ← wrong hash (base dep was stale)`, 'log-err');
+    setOrigState(p, 'styles', '');
+    drawAllArrows(p, null);
+    await this.W(600);
+
+    S(8);
+    setDesc(p, 'End of Pass 1: reset.css and zebra_background.png are correct. base.css, styles.css, component.css have wrong hashes — their dependencies hadn\'t been processed yet.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '  ⚠ Unresolved: base, styles, component — starting Pass 2', 'log-warn');
+    await this.W(900);
+
+    // ── Pass 2 ────────────────────────────────────────────────────────────────
+    S(9);
+    setPass(p, 'Pass 2 of up to 5 — delete wrong-hash intermediates, reprocess');
+    setDesc(p, 'Pass 2: wrong-hash intermediate files are deleted from disk, then the unresolved files are reprocessed. This time reset.css is in hashed_files.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Pass 2 ──', 'log-dim');
+    await this.W(800);
+
+    // Delete & reprocess base
+    S(10);
+    addLog(p, `  🗑 Delete base.${HASHES.base.bad}.css`, 'log-err');
+    await this.W(300);
+    await deleteCopy(baseBad, this.speed);
+
+    setOrigState(p, 'base', 'highlighted');
+    drawHighlightArrows(p, 'base');
+    addLog(p, '  Reprocessing base.css…', 'log-info');
+    addLog(p, `    url(reset.css) → hashed_files has .${HASHES.reset.ok} ✓`, 'log-dim');
+    await this.W(600);
+    createCopy(p, 'base', HASHES.base.ok, true);
+    addLog(p, `    ✓ base.${HASHES.base.ok}.css`, 'log-ok');
+    setOrigState(p, 'base', '');
+    drawAllArrows(p, null);
+    await this.W(500);
+
+    // Delete & reprocess component (styles still wrong → still wrong)
+    S(11);
+    addLog(p, `  🗑 Delete component.${HASHES.component.bad}.css`, 'log-err');
+    await this.W(300);
+    await deleteCopy(compBad, this.speed);
+
+    setOrigState(p, 'component', 'highlighted');
+    drawHighlightArrows(p, 'component');
+    addLog(p, '  Reprocessing component.css…', 'log-info');
+    addLog(p, `    url(styles.css) → hashed_files still has .${HASHES.styles.bad} (wrong!)`, 'log-warn');
+    await this.W(600);
+    const compBad2 = createCopy(p, 'component', HASHES.component.bad+'2', false);
+    addLog(p, `    ✗ component.${HASHES.component.bad}2.css  ← still wrong (styles dep still stale)`, 'log-err');
+    setOrigState(p, 'component', '');
+    drawAllArrows(p, null);
+    await this.W(500);
+
+    // Delete & reprocess styles (base NOW correct in hashed_files → correct!)
+    S(12);
+    addLog(p, `  🗑 Delete styles.${HASHES.styles.bad}.css`, 'log-err');
+    await this.W(300);
+    await deleteCopy(stylesBad, this.speed);
+
+    setOrigState(p, 'styles', 'highlighted');
+    drawHighlightArrows(p, 'styles');
+    addLog(p, '  Reprocessing styles.css…', 'log-info');
+    addLog(p, `    url(base.css) → hashed_files now has .${HASHES.base.ok} ✓`, 'log-dim');
+    addLog(p, `    url(zebra_background.png) → .${HASHES.zebra.ok} ✓`, 'log-dim');
+    await this.W(800);
+    createCopy(p, 'styles', HASHES.styles.ok, true);
+    addLog(p, `    ✓ styles.${HASHES.styles.ok}.css`, 'log-ok');
+    setOrigState(p, 'styles', '');
+    drawAllArrows(p, null);
+    await this.W(600);
+
+    S(13);
+    setDesc(p, 'End of Pass 2: base.css and styles.css now correct. component.css is still wrong — it was processed before styles.css was corrected in this pass.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '  ⚠ Unresolved: component — starting Pass 3', 'log-warn');
+    await this.W(900);
+
+    // ── Pass 3 ────────────────────────────────────────────────────────────────
+    S(14);
+    setPass(p, 'Pass 3 of up to 5 — final resolution');
+    setDesc(p, 'Pass 3: styles.css is now correct, so component.css can finally get its correct hash.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Pass 3 ──', 'log-dim');
+    await this.W(700);
+
+    S(15);
+    addLog(p, `  🗑 Delete component.${HASHES.component.bad}2.css`, 'log-err');
+    await this.W(300);
+    await deleteCopy(compBad2, this.speed);
+
+    setOrigState(p, 'component', 'highlighted');
+    drawHighlightArrows(p, 'component');
+    addLog(p, '  Reprocessing component.css…', 'log-info');
+    addLog(p, `    url(styles.css) → hashed_files now has .${HASHES.styles.ok} ✓`, 'log-dim');
+    await this.W(700);
+    createCopy(p, 'component', HASHES.component.ok, true);
+    addLog(p, `    ✓ component.${HASHES.component.ok}.css`, 'log-ok');
+    setOrigState(p, 'component', '');
+    drawAllArrows(p, null);
+    await this.W(600);
+
+    S(16);
+    setPass(p, '✓ Complete after 3 passes');
+    setDesc(p, 'Done. 3 passes were needed because the longest dependency chain (component→styles→base→reset) is 3 levels deep. Each pass wrote intermediate files with wrong hashes that had to be deleted. max_post_process_passes was 5.', 'ok');
+    addLog(p, '', 'log-dim');
+    addLog(p, '✓ post_process complete — 3 passes used (max was 5)', 'log-ok');
+    addLog(p, '  Wrote and deleted wrong-hash intermediates each pass.', 'log-warn');
+    S(TOT);
+  }
+
+  async _runCircular() {
+    const p = this.pfx;
+    const TOT = 14; let s = 0;
+    const S = n => { s = n; this.step(s, TOT); setProgress(p, Math.round(s/TOT*100)); };
+
+    S(1);
+    setDesc(p, 'a.css and b.css import each other — a circular dependency. The old algorithm has no cycle detection.');
+    addLog(p, '— post_process() starting (circular dep example) —', 'log-dim');
+    await this.W(600);
+    await this.W(100);
+    drawAllArrows(p, null);
+    await this.W(700);
+
+    // Non-adjustable
+    S(2);
+    setPass(p, 'Non-adjustable files (single pass)');
+    addLog(p, '── Non-adjustable pass ──', 'log-dim');
+    setOrigState(p, 'zebra', 'highlighted');
+    addLog(p, '  Processing zebra_background.png…', 'log-info');
+    await this.W(600);
+    createCopy(p, 'zebra', HASHES.zebra.ok, true);
+    addLog(p, `    ✓ zebra_background.${HASHES.zebra.ok}.png`, 'log-ok');
+    setOrigState(p, 'zebra', '');
+    await this.W(500);
+
+    // Helper: run one full pass over [a, b], creating/replacing wrong-hash copies
+    const runPass = async (passNum, prevCopies) => {
+      setPass(p, `Pass ${passNum} of 5 — a.css and b.css still unresolved`);
+      addLog(p, '', 'log-dim');
+      addLog(p, `── Pass ${passNum} ──`, 'log-dim');
+      await this.W(500);
+      const newCopies = {};
+      for (const id of ['a','b']) {
+        if (prevCopies && prevCopies[id]) {
+          addLog(p, `  🗑 Delete ${FILES[id].name.replace('.css','')}.${prevCopies[id]}.css`, 'log-err');
+          await deleteCopy(prevCopies[id + '_el'], this.speed);
+        }
+        setOrigState(p, id, 'highlighted');
+        drawHighlightArrows(p, id);
+        addLog(p, `  Processing ${FILES[id].name}…`, 'log-info');
+        await this.W(450);
+        const copyEl = createCopy(p, id, HASHES[id].bad, false);
+        addLog(p, `    ✗ ${FILES[id].name.replace('.css','')}.${HASHES[id].bad}.css  ← ${id==='a'?'b':'a'}.css still unresolved`, 'log-err');
+        setOrigState(p, id, '');
+        drawAllArrows(p, null);
+        newCopies[id] = HASHES[id].bad;
+        newCopies[id + '_el'] = copyEl;
+        await this.W(300);
+      }
+      return newCopies;
+    };
+
+    S(3);
+    setDesc(p, 'Pass 1: process a.css then b.css alphabetically. Both reference each other — neither can produce a correct hash.', 'warn');
+    let copies = await runPass(1, null);
+
+    S(5);
+    setDesc(p, 'Pass 2: delete wrong intermediates, try again — still circular, still wrong.', 'warn');
+    copies = await runPass(2, copies);
+
+    // Passes 3–4 fast-forwarded
+    S(7);
+    setDesc(p, 'Passes 3–4: same result each time. The algorithm has no way to break the cycle.', 'warn');
+    for (let pass = 3; pass <= 4; pass++) {
+      copies = await runPass(pass, copies);
+      await this.W(200);
+    }
+
+    S(10);
+    // Pass 5 — last attempt
+    setDesc(p, 'Pass 5 (final attempt): still unresolved.', 'warn');
+    copies = await runPass(5, copies);
+
+    S(12);
+    // Runtime error
+    setPass(p, '✗ RuntimeError — max_post_process_passes exceeded');
+    setDesc(p, 'After 5 passes the cycle is still unresolved. The old algorithm yields a RuntimeError and gives up. The wrong-hash files remain on disk.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, '✗ RuntimeError: Max post-process passes exceeded.', 'log-err');
+    addLog(p, '  Circular dependencies cannot be resolved by the multi-pass approach.', 'log-err');
+
+    // Flash the stuck copies red
+    for (const id of ['a','b']) setOrigState(p, id, 'highlighted');
+    await this.W(300);
+    for (const id of ['a','b']) setOrigState(p, id, '');
+    S(TOT);
+  }
+}
+
+// ══ NEW ALGORITHM ══════════════════════════════════════════════════════════════
+//
+// How it works:
+//   1. _scan_substitutions(): read every adjustable file once, run URL patterns
+//      to record (matched, replacement, hash_key, old_filename) per file.
+//      No files written. Dependency graph built from hash_keys found.
+//   2. Non-adjustable files processed (PNG etc.) — same as before.
+//   3. TopologicalSorter(graph).prepare() → single O(n) pass yields processing order.
+//   4. _post_process() in that order: each file's deps are already hashed,
+//      so _apply_substitutions() patches in the correct hashes immediately.
+//      Every file processed exactly once. No wrong-hash intermediates.
+
+class NewAnim extends Anim {
+  constructor() { super('new'); }
+
+  async _run() {
+    if (activeExIdx === 0) await this._runChain();
+    else                   await this._runCircular();
+  }
+
+  async _runChain() {
+    const p = this.pfx;
+    const TOT = 18;
+    let s = 0;
+    const S = n => { s = n; this.step(s, TOT); };
+
+    // ── Step 1: Render columns ─────────────────────────────────────────────────
+    S(1);
+    setDesc(p, 'Files discovered from the filesystem in alphabetical order. _scan_substitutions() will read each file once to build the dependency graph — nothing written yet.');
+    addLog(p, '— post_process() starting (new TopologicalSorter algorithm) —', 'log-dim');
+    await this.W(600);
+
+    await this.W(100);
+    drawAllArrows(p, null);
+    await this.W(700);
+
+    // ── Step 2: Scan phase ─────────────────────────────────────────────────────
+    S(2);
+    setPass(p, 'Scan phase — _scan_substitutions() reads every CSS file once');
+    setDesc(p, '_scan_substitutions() reads each adjustable file, runs the URL regex patterns to record substitutions, and collects dependency edges. No files written.');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Scan phase ──', 'log-dim');
+    await this.W(700);
+
+    // Scan each CSS file in FS order; highlight as we go
+    for (const id of FS_ORDER) {
+      const f = FILES[id];
+      if (f.type === 'png') continue; // PNG not adjustable
+      setOrigState(p, id, 'highlighted');
+      if (f.deps.length > 0) {
+        drawHighlightArrows(p, id);
+        addLog(p, `  Scanned ${f.name} → refs: ${f.deps.map(d=>FILES[d].name).join(', ')}`, 'log-info');
+      } else {
+        addLog(p, `  Scanned ${f.name} → no URL references`, 'log-dim');
+      }
+      await this.W(380);
+      setOrigState(p, id, '');
+      drawAllArrows(p, null);
+      await this.W(180);
+    }
+    S(3);
+    addLog(p, `  Graph: ${JSON.stringify(Object.fromEntries(CSS_FS_ORDER.map(id=>[id,FILES[id].deps])))}`, 'log-dim');
+    setDesc(p, 'Scan complete. The dependency graph is now known. No files have been written yet.');
+    await this.W(700);
+
+    // ── Step 3: Non-adjustable files ───────────────────────────────────────────
+    S(4);
+    setPass(p, 'Non-adjustable files (single pass)');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Non-adjustable pass ──', 'log-dim');
+    setOrigState(p, 'zebra', 'highlighted');
+    addLog(p, '  Processing zebra_background.png…', 'log-info');
+    await this.W(600);
+    createCopy(p, 'zebra', HASHES.zebra.ok, true);
+    addLog(p, `    ✓ zebra_background.${HASHES.zebra.ok}.png`, 'log-ok');
+    setOrigState(p, 'zebra', '');
+    await this.W(500);
+
+    // ── Step 4: TopologicalSorter ──────────────────────────────────────────────
+    S(5);
+    setPass(p, 'TopologicalSorter.prepare(graph) — computing processing order');
+    setDesc(p, 'TopologicalSorter.prepare() receives the dependency graph. It computes the correct processing order in O(n) — no guessing, no retries.');
+    addLog(p, '', 'log-dim');
+    addLog(p, 'TopologicalSorter.prepare(graph)', 'log-info');
+    await this.W(900);
+
+    S(6);
+    addLog(p, '  CSS topo order: reset → base → styles → component', 'log-ok');
+    addLog(p, '  (zebra_background.png is non-adjustable — already processed, stays in place)', 'log-dim');
+    setDesc(p, 'CSS topo order: reset first (no deps), then base, styles, component. zebra_background.png is non-adjustable and stays where it is.');
+    await this.W(900);
+
+    S(7);
+    setDesc(p, 'Files physically rearrange to topological order. Crossing files arc over or under each other.');
+    addLog(p, '  Sorting to topological order…', 'log-info');
+    await this.W(400);
+    await animateSortPhase(p, this.speed, this._stopRef);
+    if (this._stop) throw 'stop';
+    await this.W(400);
+    S(8);
+
+    // ── Step 5: Single processing pass in topo order ───────────────────────────
+    setPass(p, 'Single processing pass — topological order');
+    setDesc(p, 'Single pass: _post_process() iterates in topological order. _apply_substitutions() patches in already-correct hashes. Every file correct, first time.');
+    addLog(p, '', 'log-dim');
+    addLog(p, '── Processing pass (topological order) ──', 'log-dim');
+    await this.W(700);
+
+    let stepN = 9;
+    for (const id of TOPO_ORDER) {
+      if (FILES[id].type === 'png') continue; // non-adjustable, already handled above
+      S(stepN++);
+      const f = FILES[id];
+      setOrigState(p, id, 'highlighted');
+      if (f.deps.length) {
+        drawGreenArrows(p, id);
+        const depInfo = f.deps.map(d=>`${FILES[d].name}→.${HASHES[d].ok}`).join(', ');
+        addLog(p, `  Processing ${f.name}…`, 'log-info');
+        addLog(p, `    deps already resolved: ${depInfo}`, 'log-dim');
+      } else {
+        addLog(p, `  Processing ${f.name}… (no URL refs)`, 'log-info');
+      }
+      await this.W(550);
+      createCopy(p, id, HASHES[id].ok, true);
+      const ext = f.type==='png' ? 'png' : 'css';
+      addLog(p, `    ✓ ${f.name.replace(/\.(css|png)$/,'')}.${HASHES[id].ok}.${ext}`, 'log-ok');
+      setOrigState(p, id, '');
+      drawAllArrows(p, null);
+      await this.W(400);
+    }
+
+    S(TOT-1);
+    setPass(p, '✓ Complete — 1 scan + 1 pass');
+    setDesc(p, 'Done in a single scan + single pass. Every file processed once, in the right order. No intermediate files written. No wrong hashes ever touched disk.', 'ok');
+    addLog(p, '', 'log-dim');
+    addLog(p, '✓ post_process complete — 1 scan + 1 pass', 'log-ok');
+    addLog(p, '  Zero wrong-hash intermediates. Zero wasted disk writes.', 'log-ok');
+    S(TOT);
+  }
+
+  async _runCircular() {
+    const p = this.pfx;
+    const TOT = 12; let s = 0;
+    const S = n => { s = n; this.step(s, TOT); setProgress(p, Math.round(s/TOT*100)); };
+
+    S(1);
+    setDesc(p, 'a.css and b.css import each other — a circular dependency. The new algorithm detects the cycle and resolves it with a combined hash.');
+    addLog(p, '— post_process() starting (new algorithm, circular dep) —', 'log-dim');
+    await this.W(600);
+    await this.W(100);
+    drawAllArrows(p, null);
+    await this.W(700);
+
+    // Scan
+    S(2);
+    setPass(p, 'Scan phase — _scan_substitutions()');
+    setDesc(p, '_scan_substitutions() reads each file once. It records the back-edge b→a as part of the dependency graph without trying to resolve anything yet.');
+    addLog(p, '── Scan phase ──', 'log-dim');
+    await this.W(600);
+    for (const id of FS_ORDER) {
+      if (FILES[id].type === 'png') continue;
+      setOrigState(p, id, 'highlighted');
+      drawHighlightArrows(p, id);
+      addLog(p, `  Scanned ${FILES[id].name} → refs: ${FILES[id].deps.map(d=>FILES[d].name).join(', ')}`, 'log-info');
+      await this.W(450);
+      setOrigState(p, id, '');
+      drawAllArrows(p, null);
+      await this.W(180);
+    }
+    addLog(p, '  Graph: { a:[b], b:[a, zebra] }', 'log-dim');
+    await this.W(500);
+    S(3);
+
+    // Non-adjustable
+    S(4);
+    setPass(p, 'Non-adjustable files');
+    addLog(p, '── Non-adjustable pass ──', 'log-dim');
+    setOrigState(p, 'zebra', 'highlighted');
+    addLog(p, '  Processing zebra_background.png…', 'log-info');
+    await this.W(600);
+    createCopy(p, 'zebra', HASHES.zebra.ok, true);
+    addLog(p, `    ✓ zebra_background.${HASHES.zebra.ok}.png`, 'log-ok');
+    setOrigState(p, 'zebra', '');
+    await this.W(500);
+
+    // TopologicalSorter → CycleError
+    S(5);
+    setPass(p, 'TopologicalSorter.prepare(graph) → CycleError!');
+    setDesc(p, 'TopologicalSorter.prepare() raises CycleError — a cycle is detected. The algorithm identifies the circular nodes and falls back to _calculate_combined_hash.', 'warn');
+    addLog(p, '', 'log-dim');
+    addLog(p, 'TopologicalSorter.prepare(graph)', 'log-info');
+    await this.W(800);
+    addLog(p, '  ✗ CycleError: nodes in cycle: {a.css, b.css}', 'log-err');
+    drawCycleArrows(p);
+    await this.W(700);
+    S(6);
+
+    // _calculate_combined_hash
+    setPass(p, '_calculate_combined_hash({a.css, b.css})');
+    setDesc(p, '_calculate_combined_hash() applies linear (non-circular) substitutions to each file\'s content — here, rewriting zebra_background.png\'s hash — then concatenates and hashes the combined result.');
+    addLog(p, '', 'log-dim');
+    addLog(p, '_calculate_combined_hash( {a.css, b.css} )', 'log-info');
+    await this.W(700);
+    addLog(p, `  Apply zebra substitution → content with .${HASHES.zebra.ok}`, 'log-dim');
+    addLog(p, '  Concatenate a_content + b_content → combined_content', 'log-dim');
+    await this.W(600);
+    addLog(p, `  combined_hash = hash(combined_content) = "${HASHES.a.ok}"`, 'log-ok');
+    addLog(p, '  Both a.css and b.css will share this combined hash.', 'log-dim');
+    await this.W(700);
+    S(7);
+
+    // Process circular files
+    setPass(p, 'Processing circular files with combined hash');
+    setDesc(p, 'Both circular files are written using the combined hash. The hash is stable — it changes when any file in the cycle (or their linear deps) changes.', 'ok');
+    addLog(p, '── Processing circular files ──', 'log-dim');
+    await this.W(600);
+    drawAllArrows(p, null);
+
+    for (const id of ['a','b']) {
+      S(id === 'a' ? 8 : 9);
+      setOrigState(p, id, 'highlighted');
+      addLog(p, `  Processing ${FILES[id].name} with combined hash…`, 'log-info');
+      await this.W(550);
+      const copyEl = createCopy(p, id, HASHES[id].ok, true);
+      copyEl.classList.remove('copy-ok');
+      copyEl.classList.add('copy-combined');
+      addLog(p, `    ✓ ${FILES[id].name.replace('.css','')}.${HASHES[id].ok}.css  (combined hash)`, 'log-ok');
+      setOrigState(p, id, '');
+      await this.W(400);
+    }
+
+    S(TOT-1);
+    setPass(p, '✓ Complete — cycle resolved with combined hash');
+    setDesc(p, 'Done. The cycle was detected, a stable combined hash was computed, and both files were written exactly once. No wrong-hash intermediates.', 'ok');
+    addLog(p, '', 'log-dim');
+    addLog(p, '✓ post_process complete — cycle resolved gracefully', 'log-ok');
+    addLog(p, '  Both circular files share hash "' + HASHES.a.ok + '" derived from combined content.', 'log-ok');
+    S(TOT);
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+const oldA = new OldAnim();
+const newA = new NewAnim();
+setExample(0);
+</script>
+</body>
+</html>
